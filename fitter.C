@@ -141,7 +141,7 @@ double getChi2(double *par) {
 	double bg_cryo  = hcryo->GetBinContent(ix,iy);
 	double bg_pmt   = hpmt->GetBinContent(ix,iy);
 	double width    = hdata->GetYaxis()->GetBinWidth(3);
-    double signal   = axion/375.*width ;
+  double signal   = axion/375.*width ;
 	double model    = (par[0]*bg_cryo + par[1]*bg_pmt + par[2]*bg_int + par[3]*signal) ;
 	if(model == 0)    continue ;
 	if(data  == 0)    continue ;
@@ -251,7 +251,7 @@ void fitter() {
   minLogL->mnparm(0,"cryo",     1,       0.5,      0,     20,      ierflg);
   minLogL->mnparm(1,"pmt",      1,       0.5,      0,     20,      ierflg);
   minLogL->mnparm(2,"int",      1,       0.5,      0,     20,      ierflg);
-  minLogL->mnparm(3,"axion",    0,     0.1,      0,     1e6,     ierflg);
+  minLogL->mnparm(3,"axion",    0,       0.1,      0,     1e6,     ierflg);
 
 
 
