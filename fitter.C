@@ -27,14 +27,17 @@
 
 using namespace std;
 using namespace TMath;
-bool fix = true;
 
+bool fix = true;
+bool testFake = false;
+bool testShapes = true;
 
 TH2F *hdata;
 TH2F *hcryo;
 TH2F *hpmt;
 TH2F *hint;
 
+TH1F *hint_new;
 TH1D *hmodel ;
 
 
@@ -119,6 +122,70 @@ void buildModel(double gAe=1e-12) {
     hmodel->Draw();
 
 }
+
+//-------------------------------------------------------------------------
+//    Creation of a fake sample to check fit validity
+//-------------------------------------------------------------------------
+
+TH2F* createFakeSample(double A1, double A2, double A3){
+
+
+  int nbinsX = hcryo->GetXaxis()->GetNbins();
+  int nbinsY = hcryo->GetYaxis()->GetNbins();
+
+  TH2F *hFake = new TH2F("hFake","",
+      hcryo->GetNbinsX(),
+      hcryo->GetXaxis()->GetBinLowEdge(1),
+      hcryo->GetXaxis()->GetBinLowEdge(nbinsX-1)+hcryo->GetYaxis()->GetBinWidth(3)+1,
+      hcryo->GetNbinsY(),
+      hcryo->GetYaxis()->GetBinLowEdge(1),
+      hcryo->GetYaxis()->GetBinLowEdge(nbinsY-1)+hcryo->GetYaxis()->GetBinWidth(3)+1);
+
+cout << "Creation of fake sample" << endl;
+    for(int ix=1; ix<hcryo->GetNbinsX()+1; ++ix){
+
+      for(int iy=1; iy<hcryo->GetNbinsY()+1;++iy){
+        double bg_int   = hint->GetBinContent(ix,iy);
+        double bg_cryo  = hcryo->GetBinContent(ix,iy);
+        double bg_pmt   = hpmt->GetBinContent(ix,iy);
+        double sum = A1 * bg_int + A2 * bg_cryo + A3 * bg_pmt;
+
+        hFake->SetBinContent(ix, iy, sum);
+      }
+
+    }
+    cout << "Fake sample created" << endl;
+
+    return hFake;
+
+}
+
+//-------------------------------------------------------------------------
+//    2D histogram for internal bkg to test shapes
+//-------------------------------------------------------------------------
+void makeInt(TH1F *hkr85, TH1F* har39){
+
+  double norm = har39->Integral();
+  har39->Scale(0.806*1e-3*46.7*432.*24*3600*1*0.0206169/norm);
+
+  norm = hkr85->Integral();
+  hkr85->Scale(1.961*1e-3*46.7*432.*24*3600*0.998949*0.0224819/norm);
+
+
+
+  for(int ix=1; ix<hcryo->GetNbinsX()+1; ++ix){
+
+    float val = har39->GetBinContent(ix) + hkr85->GetBinContent(ix);
+    for(int iy=1; iy<hcryo->GetNbinsY()+1;++iy){
+        if(iy == 1) hint->SetBinContent(ix, iy, val);
+        else hint->SetBinContent(ix, iy, 0);
+    }
+    }
+    cout << hint->Integral() << endl;
+  //hint->Draw("colz");
+  }
+
+
 //-------------------------------------------------------------------------
 //    Chi2 minimization
 //-------------------------------------------------------------------------
@@ -131,7 +198,7 @@ double getChi2(double *par) {
 
     double axion = hmodel->GetBinContent(ix);
 
-    if(Ne > 150) {
+    if(Ne > 200) {
       for(int iy=1;iy<hdata->GetYaxis()->GetNbins();++iy) {
 	double td = hdata->GetYaxis()->GetBinCenter(iy);
 	if(td > 250)      continue ;
@@ -146,8 +213,7 @@ double getChi2(double *par) {
 	if(model == 0)    continue ;
 	if(data  == 0)    continue ;
     if(TMath::Poisson(data,model) == 0) continue ;
-	//logL += pow(data-model,2)/data ;
-	//if(hdata->GetXaxis()->GetNbins())
+	//logL += pow(data-model,2)/data 	//if(hdata->GetXaxis()->GetNbins())
     logL -= 2*TMath::Log(TMath::Poisson(data,model));
     //cout << "1   " <<  data << " " << model << " " << logL << " " << " " << TMath::Poisson(data,model) << " " << TMath::Log(TMath::Poisson(data,model)) <<endl ;
       }
@@ -178,7 +244,7 @@ double getChi2(double *par) {
 
   logL += pow(par[0]-1,2)/pow(err0,2);
   logL += pow(par[1]-1,2)/pow(err1,2);
-  logL += pow(par[2]-1,2)/pow(err2,2);
+  //logL += pow(par[2]-1,2)/pow(err2,2);
   //cout << logL << endl;
   gr_chi2->SetPoint(idx, par[3], logL);
   //cout << idx << " " << par[3] << endl;
@@ -204,17 +270,27 @@ void fitter() {
   //gStyle->SetOptLogx(1);
   //gStyle->SetOptLogy(1);
 
-  // data
-  TFile *_fdata = TFile::Open("data_spectra.root");
-  hdata = (TH2F*) _fdata->Get("hdata_tdrift_ne");
-  //TH1F* hdata_fill = (TH1F *) _fdata->Get("hNe");
-  TH1F* hdata_ne = (TH1F *) _fdata->Get("hdata_ne");
-
   TFile *_fin = TFile::Open("lowEne2D.root");
   //hdata = (TH2F*) _fin->Get("hdata_tdrift_ne");
   hcryo = (TH2F*) _fin->Get("hsumTDcry");
   hpmt  = (TH2F*) _fin->Get("hsumTDpmt");
   hint  = (TH2F*) _fin->Get("hsumTDint");
+
+  if(testShapes){
+    TFile *_fin_int = TFile::Open("shapes.root");
+    TH1F *har39 = (TH1F*) _fin_int->Get("har39");
+    TH1F *hkr85 = (TH1F*) _fin_int->Get("hkr85");
+
+    makeInt(har39, hkr85);
+  }
+
+
+  // data
+  TFile *_fdata = TFile::Open("data_spectra.root");
+  if(testFake) hdata = createFakeSample(0.6,0.7,0.9);
+  else hdata = (TH2F*) _fdata->Get("hdata_tdrift_ne");
+  TH1F* hdata_ne = (TH1F *) _fdata->Get("hdata_ne");
+
 
   // model
   buildModel();
@@ -230,6 +306,7 @@ void fitter() {
   hcryo->RebinX(rebinX);
   hpmt->RebinX(rebinX);
   hint->RebinX(rebinX);
+  //hint_new->RebinX(rebinX);
   hmodel->RebinX(rebinX);
 
   hdata->RebinY(rebinY);
@@ -255,7 +332,7 @@ void fitter() {
 
 
 
-  //minLogL->FixParameter(3);
+  minLogL->FixParameter(3);
   //minLogL->FixParameter(2);
   //minLogL->FixParameter(1);
   //minLogL->FixParameter(0);
